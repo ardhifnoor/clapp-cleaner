@@ -64,12 +64,26 @@ final class BrewIndex {
         }
     }
 
+    /// Non-interactive environment for brew subprocesses: never auto-update, no
+    /// hints/colors. Crucially paired with a /dev/null stdin (see below) so brew
+    /// can never block the TUI waiting on a prompt.
+    private static func brewEnvironment() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
+        env["HOMEBREW_NO_ENV_HINTS"] = "1"
+        env["HOMEBREW_NO_COLOR"] = "1"
+        return env
+    }
+
     /// Run a subprocess and capture stdout. Returns nil on launch failure.
+    /// stdin is /dev/null so the process can never hang waiting for input.
     @discardableResult
     static func run(_ path: String, _ args: [String]) -> String? {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: path)
         proc.arguments = args
+        proc.environment = brewEnvironment()
+        proc.standardInput = FileHandle.nullDevice
         let out = Pipe()
         proc.standardOutput = out
         proc.standardError = Pipe()
@@ -79,19 +93,25 @@ final class BrewIndex {
         return String(data: data, encoding: .utf8)
     }
 
-    /// Run `brew uninstall --cask <token>`; returns (success, combined output).
-    func uninstallCask(token: String) -> (ok: Bool, output: String) {
-        guard let brew = brewPath else { return (false, "brew not found") }
+    /// Run `brew uninstall --cask <token>` **interactively**, inheriting the real
+    /// terminal so the user sees brew's progress and can answer any prompt.
+    ///
+    /// We deliberately do NOT capture stdout/stderr through a pipe: some casks
+    /// remove a privileged helper via `sudo`, which prompts for a password on the
+    /// controlling terminal (`/dev/tty`). Capturing the output hid that prompt and
+    /// hung the app forever. Inheriting the terminal makes the prompt visible and
+    /// answerable. The caller must have already left raw mode.
+    ///
+    /// Returns true on success (exit status 0).
+    func uninstallCask(token: String) -> Bool {
+        guard let brew = brewPath else { return false }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: brew)
         proc.arguments = ["uninstall", "--cask", token]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = pipe
-        do { try proc.run() } catch { return (false, "failed to launch brew: \(error.localizedDescription)") }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.environment = BrewIndex.brewEnvironment()
+        // stdin/stdout/stderr are inherited from CLAPP (the live terminal).
+        do { try proc.run() } catch { return false }
         proc.waitUntilExit()
-        let text = String(data: data, encoding: .utf8) ?? ""
-        return (proc.terminationStatus == 0, text.trimmingCharacters(in: .whitespacesAndNewlines))
+        return proc.terminationStatus == 0
     }
 }

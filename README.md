@@ -78,7 +78,7 @@ CLAPP shows **how each app was installed** in a `Source` column:
 
 | Source | Meaning | Uninstall behaviour |
 |--------|---------|---------------------|
-| `brew` | Homebrew **cask** (GUI app) | Removed via `brew uninstall --cask <token>` so Homebrew's records stay consistent — no stale "still installed" entries. CLAPP still cleans the user-level support files it finds. |
+| `brew` | Homebrew **cask** (GUI app) | Removed via `brew uninstall --cask <token>` so Homebrew's records stay consistent — no stale "still installed" entries. brew runs **interactively** on the terminal and may prompt for your password (to remove privileged helpers); CLAPP also cleans the user-level support files it finds. |
 | `App Store` | Has a Mac App Store receipt (`_MASReceipt`) | Removed from disk like a normal app. |
 | `—` | Manual install (drag-to-Applications, `.dmg`, `.pkg`) | Removed from disk (or moved to Trash with `--trash`). |
 

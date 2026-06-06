@@ -398,15 +398,21 @@ final class CleanerUI {
             }
 
             // Homebrew casks: uninstall through brew so its records stay consistent.
+            // brew runs interactively on the live terminal (it may prompt for a
+            // password to remove privileged helpers), so we hand the screen over.
             if case .brewCask(let token) = app.source, let brew = brew, brew.isAvailable {
-                let result = brew.uninstallCask(token: token)
-                if result.ok {
+                emit("→  \(app.name): handing over to Homebrew (you may be asked for your password)…")
+                print("")
+                terminal.flush()
+                let ok = brew.uninstallCask(token: token)
+                print("")
+                if ok {
                     freed += app.sizeBytes
                     totalFreed += freed
                     emit("✓  \(padRight(app.name, 28))  brew uninstalled ‘\(token)’ (\(formatSize(freed)) freed)")
                 } else {
-                    let firstLine = result.output.split(whereSeparator: \.isNewline).first.map(String.init) ?? "brew failed"
-                    emit("✗  \(padRight(app.name, 28))  brew: \(firstLine)")
+                    emit("✗  \(padRight(app.name, 28))  brew uninstall failed")
+                    emit("   Try manually: brew uninstall --cask \(token)")
                 }
                 continue
             }
