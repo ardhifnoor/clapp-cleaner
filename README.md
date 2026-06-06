@@ -82,9 +82,19 @@ CLAPP shows **how each app was installed** in a `Source` column:
 | `App Store` | Has a Mac App Store receipt (`_MASReceipt`) | Removed from disk like a normal app. |
 | `—` | Manual install (drag-to-Applications, `.dmg`, `.pkg`) | Removed from disk (or moved to Trash with `--trash`). |
 
-Homebrew casks are matched by reading `brew info --cask --json` once at startup
-and mapping each cask's `.app` artifact to its token. If Homebrew isn't installed,
-the column simply shows `—`/`App Store` and nothing changes.
+Homebrew casks are matched by reading `brew info --cask --json` and mapping each
+cask's `.app` artifact to its token. If Homebrew isn't installed, the column
+simply shows `—`/`App Store` and nothing changes.
+
+#### Non-blocking startup
+
+Querying Homebrew takes a couple of seconds, so CLAPP **does not block on it**.
+The app list appears immediately (~0.4s); the Homebrew index builds on a
+background thread. While it loads, the header shows a small **`checking
+Homebrew…`** note and brew-managed apps appear as `—`. The moment the index is
+ready the screen redraws on its own and the `brew` labels fill in — no keypress
+needed. (If you start a delete before it finishes, CLAPP briefly waits for the
+index so casks are still routed through `brew uninstall --cask`.)
 
 > **Scope — CLI tools (npm, brew *formulae*):** CLAPP is an **app** cleaner — it
 > scans `.app` bundles. Command-line tools installed with `npm install -g` or
