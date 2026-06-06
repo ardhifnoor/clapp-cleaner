@@ -110,7 +110,7 @@ index so casks are still routed through `brew uninstall --cask`.)
 Requires the Xcode Command Line Tools (`xcode-select --install`) — no full Xcode needed.
 
 ```bash
-git clone <repo> ~/clapp-cleaner      # or copy the source there
+git clone https://github.com/ardhifnoor/clapp-cleaner.git ~/clapp-cleaner
 cd ~/clapp-cleaner
 swift build -c release
 cp .build/release/clapp /usr/local/bin/clapp
