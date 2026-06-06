@@ -18,10 +18,10 @@ permissions:
 
 jobs:
   publish:
-    # Intel runner → native x86_64 binary, matching the formula's artifact.
-    # (If macos-13 is ever retired, switch to macos-latest with a universal
-    #  build: `swift build -c release --arch arm64 --arch x86_64`.)
-    runs-on: macos-13
+    # Apple Silicon runner (fast, plentiful — Intel macos-13 runners queue for
+    # ages). We cross-compile the x86_64 binary here so the artifact still
+    # matches the formula (macos-x86_64); on Apple Silicon it runs via Rosetta.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -33,8 +33,8 @@ jobs:
           echo "tag=$TAG"            >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}"    >> "$GITHUB_OUTPUT"
 
-      - name: Build release binary
-        run: swift build -c release
+      - name: Build release binary (x86_64)
+        run: swift build -c release --arch x86_64
 
       - name: Package binary
         id: pkg
@@ -42,7 +42,7 @@ jobs:
           set -euo pipefail
           VERSION="${{ steps.meta.outputs.version }}"
           TARBALL="clapp-${VERSION}-macos-x86_64.tar.gz"
-          BINDIR="$(swift build -c release --show-bin-path)"
+          BINDIR="$(swift build -c release --arch x86_64 --show-bin-path)"
           file "$BINDIR/clapp"
           tar -czf "$TARBALL" -C "$BINDIR" clapp
           SHA="$(shasum -a 256 "$TARBALL" | awk '{print $1}')"
