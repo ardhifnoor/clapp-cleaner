@@ -63,7 +63,10 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
+          # Trim any stray whitespace/newline from the secret (a token never
+          # contains whitespace; a trailing newline makes the clone URL malformed).
+          GH_TOKEN="$(printf '%s' "${GH_TOKEN:-}" | tr -d '[:space:]')"
+          if [ -z "$GH_TOKEN" ]; then
             echo "::error::HOMEBREW_TAP_TOKEN secret is missing or empty. Set it with a fine-grained PAT that has Contents:write on homebrew-tap."
             exit 1
           fi
