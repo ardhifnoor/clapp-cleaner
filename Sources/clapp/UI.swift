@@ -10,6 +10,7 @@ func formatSize(_ bytes: Int64) -> String {
 final class CleanerUI {
     private let scanner = AppScanner()
     private let terminal = Terminal()
+    private var brew: BrewIndex?
     private var apps: [AppInfo] = []
     private var rows: [DisplayRow] = []   // flattened: vendor headers + app rows
     private var cursor = 0                 // index into `rows`, always on an .app row
@@ -22,6 +23,7 @@ final class CleanerUI {
     private let leftMargin = 2
     private let appIndentW = 2        // app rows indent under their vendor header
     private let sizeColW = 9
+    private let sourceColW = 9        // "App Store"
     private let assocColW = 12
     private let prefixW = 6           // "> [x] "
 
@@ -59,7 +61,8 @@ final class CleanerUI {
         printHeader()
         print("\n  Scanning installed apps…", terminator: "")
         terminal.flush()
-        apps = scanner.scan(includeSystemApps: showSystem)
+        brew = BrewIndex()
+        apps = scanner.scan(includeSystemApps: showSystem, brew: brew)
 
         if apps.isEmpty {
             terminal.clearScreen()
@@ -167,12 +170,14 @@ final class CleanerUI {
     // MARK: - Geometry
 
     private var contentWidth: Int { max(20, terminal.width - leftMargin - 1) }
-    private var showAssocColumn: Bool { contentWidth >= 56 }
+    private var showSourceColumn: Bool { contentWidth >= 50 }
+    private var showAssocColumn: Bool { contentWidth >= 66 }
     private var compactBanner: Bool { contentWidth < 34 }
 
     private var nameColW: Int {
+        let source = showSourceColumn ? sourceColW + 2 : 0
         let assoc = showAssocColumn ? assocColW + 2 : 0
-        let w = contentWidth - appIndentW - prefixW - 1 - sizeColW - assoc
+        let w = contentWidth - appIndentW - prefixW - 1 - sizeColW - source - assoc
         return max(8, w)
     }
 
@@ -235,7 +240,8 @@ final class CleanerUI {
         let name = padRight("App Name", nameColW)
         let size = padLeft("Size", sizeColW)
         var s = String(repeating: " ", count: appIndentW + prefixW) + name + " " + size
-        if showAssocColumn { s += "  " + padRight("Assoc. Files", assocColW) }
+        if showSourceColumn { s += "  " + padRight("Source", sourceColW) }
+        if showAssocColumn  { s += "  " + padRight("Assoc. Files", assocColW) }
         emit(s)
     }
 
@@ -260,6 +266,9 @@ final class CleanerUI {
         let nameCell = padRight(app.name, nameColW)
         let sizeCell = padLeft(app.sizeString, sizeColW)
         var content = String(repeating: " ", count: appIndentW) + prefix + nameCell + " " + sizeCell
+        if showSourceColumn {
+            content += "  " + padRight(app.source.label, sourceColW)
+        }
         if showAssocColumn {
             let fcount = app.associatedFiles.isEmpty ? "—" : "\(app.associatedFiles.count) file(s)"
             content += "  " + padRight(fcount, assocColW)
@@ -324,11 +333,18 @@ final class CleanerUI {
         emit("")
         for app in plan.apps {
             let fcount = app.associatedFiles.isEmpty ? "" : " + \(app.associatedFiles.count) assoc. file(s)"
-            emit("  • \(app.name)  (\(app.sizeString)\(fcount)) — \(app.vendor)")
+            let src: String
+            if case .brewCask(let token) = app.source { src = "brew cask ‘\(token)’" }
+            else { src = app.source == .appStore ? "App Store" : app.vendor }
+            emit("  • \(app.name)  (\(app.sizeString)\(fcount)) — \(src)")
         }
         emit("")
         if assocCount > 0 {
             emit("\(assocCount) app-specific support file(s) will also be removed.")
+        }
+        let brewApps = plan.apps.filter { if case .brewCask = $0.source { return true }; return false }
+        if !brewApps.isEmpty {
+            emit("\(brewApps.count) Homebrew cask(s) will be removed via ‘brew uninstall --cask’ (keeps brew in sync).")
         }
 
         if !plan.shared.isEmpty {
@@ -374,12 +390,28 @@ final class CleanerUI {
             var freed: Int64 = 0
             var errors: [String] = []
 
+            // App-specific support files are cleaned by CLAPP regardless of source.
             for file in app.associatedFiles {
                 let fileSize = scanner.directorySize(url: file)
                 do { try remove(file); freed += fileSize }
                 catch { errors.append(file.lastPathComponent) }
             }
 
+            // Homebrew casks: uninstall through brew so its records stay consistent.
+            if case .brewCask(let token) = app.source, let brew = brew, brew.isAvailable {
+                let result = brew.uninstallCask(token: token)
+                if result.ok {
+                    freed += app.sizeBytes
+                    totalFreed += freed
+                    emit("✓  \(padRight(app.name, 28))  brew uninstalled ‘\(token)’ (\(formatSize(freed)) freed)")
+                } else {
+                    let firstLine = result.output.split(whereSeparator: \.isNewline).first.map(String.init) ?? "brew failed"
+                    emit("✗  \(padRight(app.name, 28))  brew: \(firstLine)")
+                }
+                continue
+            }
+
+            // Manual / App Store apps: remove the bundle from disk.
             do {
                 let appSize = app.sizeBytes
                 try remove(app.path)

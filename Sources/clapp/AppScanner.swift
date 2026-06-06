@@ -6,6 +6,7 @@ struct AppInfo {
     let path: URL
     let bundleID: String?
     let vendor: String
+    let source: AppSource
     var sizeBytes: Int64
     var associatedFiles: [URL]
     var isSelected: Bool = false
@@ -23,7 +24,8 @@ final class AppScanner {
     // MARK: - Public scan
 
     /// Returns only user-removable apps. Pass `includeSystemApps: true` for --show-system mode.
-    func scan(includeSystemApps: Bool = false) -> [AppInfo] {
+    /// `brew` (if supplied) attributes apps to their Homebrew cask.
+    func scan(includeSystemApps: Bool = false, brew: BrewIndex? = nil) -> [AppInfo] {
         var apps: [AppInfo] = []
         let searchPaths = [
             URL(fileURLWithPath: "/Applications"),
@@ -35,10 +37,18 @@ final class AppScanner {
             ) else { continue }
             for url in contents where url.pathExtension == "app" {
                 guard includeSystemApps || !isAppleFirstParty(at: url) else { continue }
-                if let info = makeAppInfo(url: url) { apps.append(info) }
+                if let info = makeAppInfo(url: url, brew: brew) { apps.append(info) }
             }
         }
         return apps.sorted { $0.name.lowercased() < $1.name.lowercased() }
+    }
+
+    /// Determine how an app was installed.
+    func appSource(at url: URL, brew: BrewIndex?) -> AppSource {
+        if let token = brew?.appToToken[url.lastPathComponent] { return .brewCask(token: token) }
+        let receipt = url.appendingPathComponent("Contents/_MASReceipt/receipt")
+        if FileManager.default.fileExists(atPath: receipt.path) { return .appStore }
+        return .manual
     }
 
     // MARK: - Apple first-party detection
@@ -85,14 +95,15 @@ final class AppScanner {
 
     // MARK: - App info builders
 
-    private func makeAppInfo(url: URL) -> AppInfo? {
+    private func makeAppInfo(url: URL, brew: BrewIndex?) -> AppInfo? {
         let name = url.deletingPathExtension().lastPathComponent
         let bundleID = readBundleID(appURL: url)
         let size = directorySize(url: url)
         let associated = findAssociatedFiles(name: name, bundleID: bundleID)
         let vendor = vendorName(at: url, bundleID: bundleID)
+        let source = appSource(at: url, brew: brew)
         return AppInfo(name: name, path: url, bundleID: bundleID, vendor: vendor,
-                       sizeBytes: size, associatedFiles: associated)
+                       source: source, sizeBytes: size, associatedFiles: associated)
     }
 
     // MARK: - Vendor identification

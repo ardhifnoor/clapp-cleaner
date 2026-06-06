@@ -14,16 +14,16 @@ CLAPP scans your installed applications, shows their size and any associated sup
 
   ↑↓ Navigate   Space Toggle   A All/None   D Delete   Q Quit
 
-  ─────────────────────────────────────────────────────────────────
-          App Name                              Size  Assoc. Files
-  ─────────────────────────────────────────────────────────────────
-  ▾ Google                                      1 app          716 MB
-    > [x] Google Chrome                       716 MB  —
-  ▾ Mozilla                                     1 app          412 MB
-      [ ] Firefox                             412 MB  5 file(s)
-  ▾ Sublime HQ                                  1 app           98 MB
-      [ ] Sublime Text                          98 MB  3 file(s)
-  ─────────────────────────────────────────────────────────────────
+  ──────────────────────────────────────────────────────────────────────────
+          App Name                        Size  Source     Assoc. Files
+  ──────────────────────────────────────────────────────────────────────────
+  ▾ Google                                1 app                      716 MB
+    > [x] Google Chrome                 716 MB  brew       —
+  ▾ Mozilla                               1 app                      412 MB
+      [ ] Firefox                       412 MB  —          5 file(s)
+  ▾ Sublime HQ                            1 app                       98 MB
+      [ ] Sublime Text                   98 MB  App Store  3 file(s)
+  ──────────────────────────────────────────────────────────────────────────
 ```
 
 Apps are **grouped by vendor** (derived from each app's code-signing identity),
@@ -71,6 +71,27 @@ applicable they're listed explicitly on the confirmation screen, labelled as
 > → Login Items → "Allow in the Background"**. Modern login items registered via
 > `SMAppService` (stored in a private database) are *not* file-based and are not
 > detected by CLAPP.
+
+### Package-manager awareness (Source column)
+
+CLAPP shows **how each app was installed** in a `Source` column:
+
+| Source | Meaning | Uninstall behaviour |
+|--------|---------|---------------------|
+| `brew` | Homebrew **cask** (GUI app) | Removed via `brew uninstall --cask <token>` so Homebrew's records stay consistent — no stale "still installed" entries. CLAPP still cleans the user-level support files it finds. |
+| `App Store` | Has a Mac App Store receipt (`_MASReceipt`) | Removed from disk like a normal app. |
+| `—` | Manual install (drag-to-Applications, `.dmg`, `.pkg`) | Removed from disk (or moved to Trash with `--trash`). |
+
+Homebrew casks are matched by reading `brew info --cask --json` once at startup
+and mapping each cask's `.app` artifact to its token. If Homebrew isn't installed,
+the column simply shows `—`/`App Store` and nothing changes.
+
+> **Scope — CLI tools (npm, brew *formulae*):** CLAPP is an **app** cleaner — it
+> scans `.app` bundles. Command-line tools installed with `npm install -g` or
+> `brew install <formula>` are not `.app` bundles (they live under a Node prefix
+> or Homebrew's Cellar as binaries/symlinks), so they are **not** listed. Use
+> `npm uninstall -g <pkg>` / `brew uninstall <formula>` for those. Only Homebrew
+> **casks**, which install real GUI apps, are surfaced here.
 
 ---
 
