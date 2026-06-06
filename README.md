@@ -6,7 +6,7 @@ CLAPP scans your installed applications, shows their size and any associated sup
 
 ```
   ╔══════════════════════════════════════════════════════╗
-  ║                CLAPP Cleaner  v1.0.0                 ║
+  ║                CLAPP Cleaner  v1.1.2                 ║
   ║            Command Line-based APP Cleaner            ║
   ╚══════════════════════════════════════════════════════╝
 
@@ -119,7 +119,7 @@ cp .build/release/clapp /usr/local/bin/clapp
 Verify:
 
 ```bash
-clapp --version      # 1.0.0
+clapp --version      # 1.1.2
 clapp --help
 ```
 

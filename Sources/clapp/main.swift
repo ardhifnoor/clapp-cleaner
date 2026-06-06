@@ -1,11 +1,14 @@
 import ArgumentParser
 
+/// Single source of truth for the app version (used by --version and the banner).
+let clappVersion = "1.1.2"
+
 struct CLAPPCleaner: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "clapp",
         abstract: "CLAPP Cleaner — Command Line-based APP Cleaner",
         discussion: "Interactively list and uninstall macOS apps along with their associated library files.",
-        version: "1.0.0"
+        version: clappVersion
     )
 
     @Flag(name: .shortAndLong, help: "Move deleted apps to Trash instead of permanently deleting them.")

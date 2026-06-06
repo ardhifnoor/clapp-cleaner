@@ -346,7 +346,7 @@ final class CleanerUI {
     }
 
     private func printHeader() {
-        let title1 = "CLAPP Cleaner  v1.0.0"
+        let title1 = "CLAPP Cleaner  v\(clappVersion)"
         let title2 = "Command Line-based APP Cleaner"
         print()
         if compactBanner {
