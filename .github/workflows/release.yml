@@ -63,6 +63,10 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN secret is missing or empty. Set it with a fine-grained PAT that has Contents:write on homebrew-tap."
+            exit 1
+          fi
           VERSION="${{ steps.meta.outputs.version }}"
           TAG="${{ steps.meta.outputs.tag }}"
           SHA="${{ steps.pkg.outputs.sha }}"
