@@ -107,6 +107,24 @@ index so casks are still routed through `brew uninstall --cask`.)
 
 ## Installation
 
+### Homebrew (recommended)
+
+```bash
+brew install ardhifnoor/tap/clapp-cleaner
+```
+
+…or tap once, then install/upgrade by short name:
+
+```bash
+brew tap ardhifnoor/tap
+brew install clapp-cleaner
+```
+
+> The Homebrew bottle is an x86_64 binary; on Apple Silicon it runs via Rosetta 2.
+> For a native arm64 build, use "From source" below.
+
+### From source
+
 Requires the Xcode Command Line Tools (`xcode-select --install`) — no full Xcode needed.
 
 ```bash
@@ -116,7 +134,7 @@ swift build -c release
 cp .build/release/clapp /usr/local/bin/clapp
 ```
 
-Verify:
+Verify (either method):
 
 ```bash
 clapp --version      # 1.1.2
@@ -125,12 +143,20 @@ clapp --help
 
 ### Uninstalling CLAPP itself
 
+If installed with Homebrew:
+
+```bash
+brew uninstall clapp-cleaner
+```
+
+If installed from source:
+
 ```bash
 rm /usr/local/bin/clapp        # remove the binary
 rm -rf ~/clapp-cleaner         # remove the source/build dir
 ```
 
-CLAPP stores no preferences, caches, or background agents — those two commands remove it completely.
+CLAPP stores no preferences, caches, or background agents — these remove it completely.
 
 ---
 
