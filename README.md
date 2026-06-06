@@ -207,6 +207,49 @@ clapp --show-system   # also show Apple system apps (still hard to delete due to
 
 ---
 
+## Releasing (maintainers)
+
+Cutting a release is two steps — a GitHub Action
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) does the rest.
+
+```bash
+# 1. Bump the version (single source of truth: clappVersion in Sources/clapp/main.swift)
+#    e.g. let clappVersion = "1.1.3"
+git commit -am "Bump version to 1.1.3"
+git push
+
+# 2. Publish a release tagged vX.Y.Z
+gh release create v1.1.3 --generate-notes
+```
+
+On publish, the workflow automatically:
+
+1. Builds the binary on an Apple Silicon runner (cross-compiled to x86_64).
+2. Attaches `clapp-<version>-macos-x86_64.tar.gz` to the release.
+3. Updates `url` + `sha256` + `version` in the
+   [`ardhifnoor/homebrew-tap`](https://github.com/ardhifnoor/homebrew-tap) formula.
+
+Users then upgrade with `brew upgrade clapp-cleaner`.
+
+You can also re-run it against an existing tag without cutting a new release:
+**Actions → "Publish release binary & bump Homebrew tap" → Run workflow → `vX.Y.Z`**.
+
+### One-time setup
+
+The formula lives in a separate repo, so the workflow needs a token that can push
+there. Create a fine-grained PAT (Repository access: `homebrew-tap`; Permissions →
+**Contents: Read and write**) and store it as a secret on this repo:
+
+```bash
+gh secret set HOMEBREW_TAP_TOKEN --repo ardhifnoor/clapp-cleaner
+# paste the github_pat_… value at the prompt
+```
+
+If that secret is missing/expired, the workflow fails at the "Bump formula" step
+with a clear message — just regenerate the PAT and re-set it.
+
+---
+
 ## License
 
 MIT — do whatever you like.
