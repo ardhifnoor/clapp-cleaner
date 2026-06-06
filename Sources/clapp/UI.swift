@@ -10,8 +10,16 @@ func formatSize(_ bytes: Int64) -> String {
 final class CleanerUI {
     private let scanner = AppScanner()
     private let terminal = Terminal()
-    private var brew: BrewIndex?
     private var apps: [AppInfo] = []
+
+    // Homebrew indexing runs on a background thread so the list shows instantly.
+    // `brew`/`brewReady` are written by that thread and read on the main thread,
+    // guarded by `brewLock`. Source labels are applied on the main thread only.
+    private let brewLock = NSLock()
+    private var brew: BrewIndex?
+    private var brewReady = false
+    private var brewApplied = false
+    private var mainThread: pthread_t?
     private var rows: [DisplayRow] = []   // flattened: vendor headers + app rows
     private var cursor = 0                 // index into `rows`, always on an .app row
     private var scrollOffset = 0
@@ -49,6 +57,7 @@ final class CleanerUI {
     }
 
     func start() {
+        mainThread = pthread_self()
         terminal.hideCursor()
         terminal.enableRawMode()
         defer {
@@ -56,13 +65,12 @@ final class CleanerUI {
             terminal.showCursor()
         }
 
-        // Scan phase
+        // Scan phase — note: no brew here, so the list appears immediately.
         terminal.clearScreen()
         printHeader()
         print("\n  Scanning installed apps…", terminator: "")
         terminal.flush()
-        brew = BrewIndex()
-        apps = scanner.scan(includeSystemApps: showSystem, brew: brew)
+        apps = scanner.scan(includeSystemApps: showSystem, brew: nil)
 
         if apps.isEmpty {
             terminal.clearScreen()
@@ -77,8 +85,54 @@ final class CleanerUI {
 
         buildRows()
         cursor = firstAppRow() ?? 0
+        startBrewIndexing()
         render()
         runLoop()
+    }
+
+    // MARK: - Background Homebrew indexing
+
+    /// Build the Homebrew cask index off the main thread, then signal the main
+    /// loop (SIGUSR1) to redraw with the resolved Source labels.
+    ///
+    /// We use a global dispatch queue rather than a bare `Thread`: Foundation's
+    /// `Process` relies on dispatch infrastructure for child-process reaping, and
+    /// running it on a plain Thread (no run loop) could hang `waitUntilExit()`.
+    private func startBrewIndexing() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let index = BrewIndex()
+            guard let self = self else { return }
+            self.brewLock.lock()
+            self.brew = index
+            self.brewReady = true
+            self.brewLock.unlock()
+            // Wake the main thread's blocking read() so it redraws.
+            if let mt = self.mainThread { pthread_kill(mt, SIGUSR1) }
+        }
+    }
+
+    /// Apply brew-derived Source labels to the apps (main thread only). Safe to
+    /// call repeatedly; does work at most once, after the index is ready.
+    private func applyBrewSourcesIfNeeded() {
+        brewLock.lock(); let ready = brewReady; let index = brew; brewLock.unlock()
+        guard ready, !brewApplied else { return }
+        if let index = index {
+            for i in apps.indices {
+                apps[i].source = scanner.appSource(at: apps[i].path, brew: index)
+            }
+        }
+        brewApplied = true
+    }
+
+    /// Block until the brew index is ready, then apply sources. Used before a
+    /// delete so casks are routed through brew even if the user is quick.
+    private func ensureBrewReady() {
+        while true {
+            brewLock.lock(); let ready = brewReady; brewLock.unlock()
+            if ready { break }
+            usleep(50_000)   // 50ms
+        }
+        applyBrewSourcesIfNeeded()
     }
 
     // MARK: - Grouping model
@@ -128,7 +182,9 @@ final class CleanerUI {
             case .deleteKey:
                 let selected = apps.filter { $0.isSelected }
                 guard !selected.isEmpty else { break }
-                let plan = buildPlan(selected)
+                ensureBrewReady()                       // make sure casks route via brew
+                let refreshed = apps.filter { $0.isSelected }
+                let plan = buildPlan(refreshed)
                 if showConfirm(plan) {
                     terminal.disableRawMode()
                     terminal.showCursor()
@@ -137,6 +193,8 @@ final class CleanerUI {
                 }
             case .resize:
                 adjustScroll()
+            case .refresh:
+                applyBrewSourcesIfNeeded()              // brew index finished loading
             case .quit, .eof:
                 terminal.clearScreen()
                 print("\n  Bye! Nothing was deleted.\n")
@@ -199,6 +257,7 @@ final class CleanerUI {
     // MARK: - Rendering
 
     private func render() {
+        applyBrewSourcesIfNeeded()   // pick up brew labels as soon as the index is ready
         terminal.clearScreen()
         printHeader()
 
@@ -206,8 +265,9 @@ final class CleanerUI {
         let selectedBytes = selected.reduce(Int64(0)) { $0 + $1.sizeBytes }
         let vendorCount = Set(apps.map { $0.vendor }).count
 
+        let brewNote = brewApplied ? "" : "  ·  checking Homebrew…"
         emit("")
-        emit("\(apps.count) apps · \(vendorCount) vendors · \(selected.count) selected · \(formatSize(selectedBytes)) to free")
+        emit("\(apps.count) apps · \(vendorCount) vendors · \(selected.count) selected · \(formatSize(selectedBytes)) to free\(brewNote)")
         emit("")
         emit("↑↓ Navigate   Space Toggle   A All/None   D Delete   Q Quit")
         emit("")

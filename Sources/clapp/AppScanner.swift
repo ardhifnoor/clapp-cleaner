@@ -6,7 +6,7 @@ struct AppInfo {
     let path: URL
     let bundleID: String?
     let vendor: String
-    let source: AppSource
+    var source: AppSource
     var sizeBytes: Int64
     var associatedFiles: [URL]
     var isSelected: Bool = false

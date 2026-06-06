@@ -4,12 +4,17 @@ import Darwin
 /// `sig_atomic_t` is the only type safe to touch inside a signal handler.
 var clappResizePending: sig_atomic_t = 0
 
+/// Set from the SIGUSR1 handler — used by background work (the Homebrew index)
+/// to ask the main loop to redraw.
+var clappRefreshPending: sig_atomic_t = 0
+
 enum KeyPress {
     case up, down, space, enter
     case quit       // q / Q / Ctrl-C
     case deleteKey  // d / D
     case selectAll  // a / A
     case resize     // terminal window was resized (SIGWINCH)
+    case refresh    // background work finished (SIGUSR1) — redraw
     case eof        // stdin closed
     case unknown
 }
@@ -35,20 +40,26 @@ final class Terminal {
         }
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)
         isRaw = true
-        installResizeHandler()
+        installSignalHandlers()
     }
 
-    /// Install a SIGWINCH handler so terminal resizes interrupt the blocking
-    /// read() in readKey(). We deliberately use sigaction with sa_flags = 0
-    /// (no SA_RESTART): the default BSD signal() would auto-restart the
-    /// interrupted read(), so the resize would never surface until the next
-    /// keypress.
-    private func installResizeHandler() {
-        var sa = sigaction()
-        sa.sa_flags = 0
-        sigemptyset(&sa.sa_mask)
-        sa.__sigaction_u.__sa_handler = { _ in clappResizePending = 1 }
-        sigaction(SIGWINCH, &sa, nil)
+    /// Install SIGWINCH (resize) and SIGUSR1 (background-refresh) handlers so they
+    /// interrupt the blocking read() in readKey(). We deliberately use sigaction
+    /// with sa_flags = 0 (no SA_RESTART): the default BSD signal() would
+    /// auto-restart the interrupted read(), so the event would never surface
+    /// until the next keypress.
+    private func installSignalHandlers() {
+        var winch = sigaction()
+        winch.sa_flags = 0
+        sigemptyset(&winch.sa_mask)
+        winch.__sigaction_u.__sa_handler = { _ in clappResizePending = 1 }
+        sigaction(SIGWINCH, &winch, nil)
+
+        var usr1 = sigaction()
+        usr1.sa_flags = 0
+        sigemptyset(&usr1.sa_mask)
+        usr1.__sigaction_u.__sa_handler = { _ in clappRefreshPending = 1 }
+        sigaction(SIGUSR1, &usr1, nil)
     }
 
     func disableRawMode() {
@@ -65,6 +76,10 @@ final class Terminal {
             if clappResizePending != 0 {              // SIGWINCH interrupted us
                 clappResizePending = 0
                 return .resize
+            }
+            if clappRefreshPending != 0 {             // SIGUSR1: background work done
+                clappRefreshPending = 0
+                return .refresh
             }
             if n == 0 { return .eof }                 // stdin closed
             // n == -1 from a different signal (EINTR): just retry
