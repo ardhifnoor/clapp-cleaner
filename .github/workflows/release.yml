@@ -1,0 +1,88 @@
+name: Publish release binary & bump Homebrew tap
+
+# On every published release this builds the binary, attaches it to the release,
+# and updates the formula in ardhifnoor/homebrew-tap (url + sha256 + version).
+# Can also be run manually against an existing tag via "Run workflow".
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to (re)build, e.g. v1.1.2"
+        required: true
+
+permissions:
+  contents: write          # needed to upload the binary asset to this repo's release
+
+jobs:
+  publish:
+    # Intel runner → native x86_64 binary, matching the formula's artifact.
+    # (If macos-13 is ever retired, switch to macos-latest with a universal
+    #  build: `swift build -c release --arch arm64 --arch x86_64`.)
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$TAG" ]; then echo "::error::No tag to build"; exit 1; fi
+          echo "tag=$TAG"            >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}"    >> "$GITHUB_OUTPUT"
+
+      - name: Build release binary
+        run: swift build -c release
+
+      - name: Package binary
+        id: pkg
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          TARBALL="clapp-${VERSION}-macos-x86_64.tar.gz"
+          BINDIR="$(swift build -c release --show-bin-path)"
+          file "$BINDIR/clapp"
+          tar -czf "$TARBALL" -C "$BINDIR" clapp
+          SHA="$(shasum -a 256 "$TARBALL" | awk '{print $1}')"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA"         >> "$GITHUB_OUTPUT"
+          echo "Built $TARBALL  sha256=$SHA"
+
+      - name: Attach binary to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.meta.outputs.tag }}" \
+            "${{ steps.pkg.outputs.tarball }}" --clobber \
+            --repo "${{ github.repository }}"
+
+      - name: Bump formula in homebrew-tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          TAG="${{ steps.meta.outputs.tag }}"
+          SHA="${{ steps.pkg.outputs.sha }}"
+          TARBALL="${{ steps.pkg.outputs.tarball }}"
+          URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${TARBALL}"
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/ardhifnoor/homebrew-tap.git" tap
+          F="tap/Formula/clapp-cleaner.rb"
+          sed -i '' -E "s|^  url \".*\"|  url \"${URL}\"|"       "$F"
+          sed -i '' -E "s|^  sha256 \".*\"|  sha256 \"${SHA}\"|" "$F"
+          sed -i '' -E "s|^  version \".*\"|  version \"${VERSION}\"|" "$F"
+
+          cd tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/clapp-cleaner.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date — nothing to commit."
+          else
+            git commit -m "clapp-cleaner ${VERSION}"
+            git push
+            echo "Bumped homebrew-tap formula to ${VERSION}."
+          fi
